@@ -80,7 +80,8 @@ class picomotor:
             nreturn = cmdLib8742.Query(strDeviceKey, cmd, strBldr)
         
 
-
+cmdLib8742.Shutdown ()
+deviceIO.Shutdown ()
     
 # o = nom_classe()
 # o.fonction_class()
