@@ -1,0 +1,233 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun  3 15:52:12 2025
+
+@author: theod
+"""
+
+import numpy as np
+import pygame
+
+
+
+pygame.init()
+pygame.joystick.init()
+screen = pygame.display.set_mode((400, 400))
+pygame.display.set_caption("Contrôle clavier")
+clock = pygame.time.Clock()
+
+
+class TextPrint:
+    def __init__(self):
+        self.reset()
+        self.font = pygame.font.Font(None, 25)
+
+    def tprint(self, screen, text):
+        text_bitmap = self.font.render(text, True, (0, 0, 0))
+        screen.blit(text_bitmap, (self.x, self.y))
+        self.y += self.line_height
+
+    def reset(self):
+        self.x = 10
+        self.y = 10
+        self.line_height = 15
+
+    def indent(self):
+        self.x += 10
+
+    def unindent(self):
+        self.x -= 10
+
+text_print = TextPrint()
+
+# Détection de la manette
+if pygame.joystick.get_count() == 0:
+    print("Aucune manette détectée")
+    exit()
+
+joystick = pygame.joystick.Joystick(0)
+joystick.init()
+print(f"Manette détectée : {joystick.get_name()} \n")
+
+# Définition des modes de vitesses 
+slow_velocity = 200 #steps/s
+medium_velocity = 1000 #steps/s
+fast_velocity = 2000 #steps/s
+
+# Initialisation du mode de déplacement
+indexMode = 0
+Mode = np.array(['mode1 (fibres indépendentes)', 'mode2 (pincettes)'])
+actualMode = Mode[indexMode]
+isModeChanged = False
+print(f"Mode choisi par défault : {actualMode}")
+
+# Initialisation du mode de vitesse
+indexModeVitesse = 0
+ModeVitesse = np.array(['mode1 (slow)', 'mode2 (medium)', 'mode3 (fast)'])
+cmdModeVitesse = np.array([f'1>1VA{slow_velocity};1>2VA{slow_velocity};1>3VA{slow_velocity};2>1VA{slow_velocity};2>2VA{slow_velocity};2>3VA{slow_velocity}', 
+                    f'1>1VA{medium_velocity};1>2VA{medium_velocity};1>3VA{medium_velocity};2>1VA{medium_velocity};2>2VA{medium_velocity};2>3VA{medium_velocity}', 
+                    f'1>1VA{fast_velocity};1>2VA{fast_velocity};1>3VA{fast_velocity};2>1VA{fast_velocity};2>2VA{fast_velocity};2>3VA{fast_velocity}'])
+actualModeVitesse = ModeVitesse[indexModeVitesse]
+isModeVitesseChanged = False
+print(f"Mode de vitesse choisi par défaut : {actualModeVitesse}")
+
+# Initialisation du mouvement des moteurs (immobiles au démarrage)
+isMoving = np.array([[False, False, False], # right : x, y, z
+                     [False, False, False]]) # left : x, y, z
+
+
+running = True
+
+# Main code
+try:
+    while running:
+        
+        # Affichage des modes de déplacement et de vitesse
+        screen.fill((255, 255, 255))
+        text_print.reset()
+        text_print.tprint(screen, "Mode de déplacement:")
+        text_print.indent()
+        text_print.tprint(screen, actualMode)
+        text_print.unindent()
+        text_print.tprint(screen, "Mode de vitesse:")
+        text_print.indent()
+        text_print.tprint(screen, actualModeVitesse)
+        text_print.unindent()
+        
+        # Manières d'arreter le "jeu" : fermer la fenêtre, appuyer sur espace, interrompre le noyau
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    print("Espace pressée, arrêt du programme.")
+                    running = False
+        
+        # Changement de mode de déplacement
+        btnMode = joystick.get_button(6)
+        
+        if btnMode == 1:
+            if not isModeChanged:
+                indexMode += 1
+                indexMode = indexMode%2
+                actualMode = Mode[indexMode]
+                print(f"Déplacement : {actualMode}")
+                isModeChanged = True
+        if btnMode == 0:
+            if isModeChanged:
+                isModeChanged = False
+                
+        # Changement de mode de vitesse   
+        btnModeVitesse = joystick.get_button(7)             
+        if btnModeVitesse == 1:
+            if not isModeVitesseChanged:
+                indexModeVitesse += 1
+                indexModeVitesse = indexModeVitesse%3
+                actualModeVitesse = ModeVitesse[indexModeVitesse]
+                print(f"Vitesse : {actualModeVitesse}")
+                print(cmdModeVitesse[indexModeVitesse])
+                isModeVitesseChanged = True
+        if btnModeVitesse == 0:
+            if isModeVitesseChanged:
+                isModeVitesseChanged = False
+                
+        
+        # Déplacement des fibres
+        left_joystick_x = joystick.get_axis(0)
+        left_joystick_y = - joystick.get_axis(1) # - car défini avec le positif vers le bas (en regardant du haut)
+        left_joystick_z_pos = joystick.get_button(4)
+        left_joystick_z_neg = joystick.get_axis(4)
+        left_joystick_z = left_joystick_z_pos - (left_joystick_z_neg + 1)/2
+        
+        right_joystick_x = joystick.get_axis(2)
+        right_joystick_y = - joystick.get_axis(3) # - car défini avec le positif vers le bas (en regardant du haut)
+        right_joystick_z_pos = joystick.get_button(5)
+        right_joystick_z_neg = joystick.get_axis(5)
+        right_joystick_z = right_joystick_z_pos - (right_joystick_z_neg + 1)/2
+
+        
+        buttons = np.array([[right_joystick_x, right_joystick_y, right_joystick_z], 
+                            [left_joystick_x, left_joystick_y, left_joystick_z]])
+        
+        isTouched_list = np.array([[(np.abs(right_joystick_x) > 0.1), (np.abs(right_joystick_y) > 0.1), right_joystick_z_pos != 0 or right_joystick_z_neg != -1],
+                                   [(np.abs(left_joystick_x) > 0.1), (np.abs(left_joystick_y) > 0.1), left_joystick_z_pos != 0 or left_joystick_z_neg != -1]])
+        
+
+        def get_direction(buttons):
+            direction = np.zeros_like(buttons, str)
+            for i in range(len(buttons)):
+                #print(f"i = {i}")
+                for j in range(len(buttons[i])):
+                    #print(f"j = {j}, signe = {np.sign(buttons[i,j])}")
+                    if np.sign(buttons[i,j]) == 1:
+                        direction[i,j] = '+'
+                    elif np.sign(buttons[i,j]) == -1:
+                        direction[i,j] = '-'
+                    else:
+                        direction[i,j] = '0'
+            return direction
+                        
+        direction = get_direction(buttons)
+        
+        # Mode indépendant 
+        if indexMode == 0:              
+            cmd = ''
+            for addr in [1,2]:
+                for axis in [1,2,3]:
+                    isTouched = isTouched_list[addr-1, axis-1]
+                    if isTouched:
+                        if not isMoving[addr-1, axis-1]:
+                            cmd += f"{addr}>{axis}MV{direction[addr-1, axis-1]};"
+                            isMoving[addr-1, axis-1] = True
+                    else:
+                        if isMoving[addr-1, axis-1]:
+                            cmd += f"{addr}>{axis}ST;"
+                            isMoving[addr-1, axis-1] = False
+    
+            if cmd !='':
+                cmd = cmd[:-1]
+                print(cmd)
+                
+        # Mode pincettes
+        elif indexMode == 1:
+            cmd = ''
+            for axis in [1,2,3]:
+                
+                # Déplacement en bloc : joystick droit
+                isTouchedRight = isTouched_list[0, axis-1] 
+                if isTouchedRight:
+                    if not isMoving[0, axis-1]:
+                        cmd += f"1>{axis}MV{direction[0, axis-1]};2>{axis}MV{direction[0, axis-1]};"
+                        isMoving[0, axis-1] = True
+                else:
+                    if isMoving[0, axis-1]:
+                        cmd += f"1>{axis}ST;2>{axis}ST;"
+                        isMoving[0, axis-1] = False
+                        
+                # Déplacement opposé (pour pincer) : joystick gauche
+                isTouchedLeft = isTouched_list[1, axis-1] 
+                if isTouchedLeft:
+                    if not isMoving[1, axis-1]:
+                        if direction[1, axis-1] == '+':
+                            cmd += f"1>{axis}MV+;2>{axis}MV-;"
+                        elif direction[1, axis-1] == '-':
+                            cmd += f"1>{axis}MV-;2>{axis}MV+;"
+                        isMoving[1, axis-1] = True
+                else:
+                    if isMoving[1, axis-1]:
+                        cmd += f"1>{axis}ST;2>{axis}ST;"
+                        isMoving[1, axis-1] = False
+                        
+            if cmd != '':
+                cmd = cmd[:-1]
+                print(cmd)
+                
+        pygame.display.flip()
+        clock.tick(30)
+
+
+except KeyboardInterrupt:
+    print("Fin du programme")
+
+finally:
+    pygame.quit()
