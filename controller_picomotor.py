@@ -258,7 +258,7 @@ class picomotor:
 
 o = picomotor()
 o.system_info()
-o.query('1>3TP?')
+
 
 o.query('1>3MV+')
 o.query('1>3ST')
@@ -285,7 +285,8 @@ o.go_home()
 
 pygame.init()
 pygame.joystick.init()
-screen = pygame.display.set_mode((800, 800))
+screen = pygame.display.set_mode((600, 600))
+center = (screen.get_width()/2, screen.get_height()/2)
 pygame.display.set_caption("Contrôle clavier")
 clock = pygame.time.Clock()
 running = True
@@ -315,45 +316,6 @@ class TextPrint:
 
 text_print = TextPrint()
 
-# Détection de la manette
-if pygame.joystick.get_count() == 0:
-    print("Aucune manette détectée")
-    exit()
-
-joystick = pygame.joystick.Joystick(0)
-joystick.init()
-print(f"Manette détectée : {joystick.get_name()} \n")
-
-
-# Initialisation du mode de déplacement
-indexMode = 0
-Mode = np.array(['independent fibers', 'simultaneous'])
-actualMode = Mode[indexMode]
-isModeChanged = False
-print(f"Mode choisi par défault : {actualMode}")
-
-# Initialisation du mode de vitesse
-slow_velocity = 100 #steps/s
-medium_velocity = 500 #steps/s
-fast_velocity = 1000 #steps/s
-velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
-ModeVitesse = np.array(['slow', 'medium', 'fast'])
-
-indexModeVitesse = 0
-o.set_all_velocity(int(velocity[indexModeVitesse]))
-actualModeVitesse = ModeVitesse[indexModeVitesse]
-isModeVitesseChanged = False
-print(f"Mode de vitesse choisi par défaut : {actualModeVitesse}")
-
-
-# Initialisation du mouvement des moteurs (immobiles au démarrage)
-isMoving = np.array([[False, False, False], # right : x, y, z
-                     [False, False, False]]) # left : x, y, z
-
-
-fibre1_pos = pygame.Vector3(2*screen.get_width() / 3, screen.get_height() / 2, 0)
-fibre2_pos = pygame.Vector3(screen.get_width() / 3, screen.get_height() / 2, 0)
-
 def get_direction(buttons):
     direction = np.zeros_like(buttons, str)
     for i in range(len(buttons)):
@@ -368,6 +330,67 @@ def get_direction(buttons):
                 direction[i,j] = '0'
     return direction
 
+def coord_to_screen(pos):
+    return (pos[0] + center[0], -pos[1] + center[1])
+
+def positionOnScreen(pos, pos_G):
+    return(screen.get_width()/2 + alpha*(pos[0] - pos_G[0]), screen.get_height()/2 - alpha*(pos[1] - pos_G[1]))
+
+# Détection de la manette
+if pygame.joystick.get_count() == 0:
+    print("Aucune manette détectée")
+    exit()
+
+joystick = pygame.joystick.Joystick(0)
+joystick.init()
+print(f"Manette détectée : {joystick.get_name()} \n")
+
+# Définition des home positions (récupérer directement avec a query DH? ou avec une fonction de la DLL)
+home_1_x = 200
+home_1_y = 200
+home_1_z = 0
+home_2_x = 400
+home_2_y = 200
+home_2_z = 0
+
+
+# Initialisation du mode de déplacement
+indexMode = 0
+Mode = np.array(['independent fibers', 'simultaneous'])
+actualMode = Mode[indexMode]
+isModeChangedLastFrame = False
+print(f"Mode choisi par défault : {actualMode}")
+
+# Initialisation du mode de vitesse
+slow_velocity = 100 #steps/s
+medium_velocity = 500 #steps/s
+fast_velocity = 1000 #steps/s
+velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
+ModeVitesse = np.array(['slow', 'medium', 'fast'])
+
+indexModeVitesse = 0
+o.set_all_velocity(int(velocity[indexModeVitesse]))
+actualModeVitesse = ModeVitesse[indexModeVitesse]
+isModeVitesseChangedLastFrame = False
+print(f"Mode de vitesse choisi par défaut : {actualModeVitesse}")
+
+
+# Initialisation du mouvement des moteurs (immobiles au démarrage)
+isMoving = np.array([[False, False, False], # right : x, y, z
+                     [False, False, False]]) # left : x, y, z
+
+# Initialisation du mode de calibration coordonnées x,y des coins du sample
+toggleCalibration = False
+isCalibrationChangedLastFrame = False
+CalibrationDone = False
+corners = [] 
+
+
+fibre1_pos = pygame.Vector3(0, 0, 0)
+fibre2_pos = pygame.Vector3(0, 0, 0)
+
+
+
 # Main code
 try:
     while running:
@@ -375,8 +398,15 @@ try:
         # Affichage des modes de déplacement et de vitesse
         screen.fill((255, 255, 255))
         text_print.reset()
+        text_print.tprint(screen, f"CALIBRATION : {toggleCalibration}")
         text_print.tprint(screen, f"Mode : {actualMode}")
-        text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")        
+        text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")
+        
+        # Affichage des home positions
+        pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y - 2), ((home_1_x + 2, home_1_y + 2)), width=1)
+        pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y + 2), ((home_1_x + 2, home_1_y - 2)), width=1)
+        pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y - 2), ((home_2_x + 2, home_2_y + 2)), width=1)
+        pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y + 2), ((home_2_x + 2, home_2_y - 2)), width=1)
         
         # Manières d'arreter le "jeu" : fermer la fenêtre, appuyer sur espace, interrompre le noyau
         for event in pygame.event.get():
@@ -396,33 +426,24 @@ try:
         
         # Changement de mode de déplacement
         btnMode = joystick.get_button(6)
-        
-        if btnMode == 1:
-            if not isModeChanged:
-                indexMode += 1
-                indexMode = indexMode%len(Mode)
-                actualMode = Mode[indexMode]
-                print(f"Déplacement : {actualMode}")
-                isModeChanged = True
-        if btnMode == 0:
-            if isModeChanged:
-                isModeChanged = False
+        if btnMode and not isModeChangedLastFrame:
+            indexMode += 1
+            indexMode = indexMode%len(Mode)
+            actualMode = Mode[indexMode]
+            print(f"Déplacement : {actualMode}")
+        isModeChangedLastFrame = btnMode
                 
         # Changement de mode de vitesse   
         btnModeVitesse = joystick.get_button(7)             
-        if btnModeVitesse == 1:
-            if not isModeVitesseChanged:
-                indexModeVitesse += 1
-                indexModeVitesse = indexModeVitesse%len(ModeVitesse)
-                actualModeVitesse = ModeVitesse[indexModeVitesse]
-                o.set_all_velocity(int(velocity[indexModeVitesse]))
-                print(f"Vitesse : {actualModeVitesse}")
-                # print(cmdModeVitesse[indexModeVitesse])
-                isModeVitesseChanged = True
-        if btnModeVitesse == 0:
-            if isModeVitesseChanged:
-                isModeVitesseChanged = False
-                
+        if btnModeVitesse and not isModeVitesseChangedLastFrame:
+            indexModeVitesse += 1
+            indexModeVitesse = indexModeVitesse%len(ModeVitesse)
+            actualModeVitesse = ModeVitesse[indexModeVitesse]
+            o.set_all_velocity(int(velocity[indexModeVitesse]))
+            print(f"Vitesse : {actualModeVitesse}")
+            # print(cmdModeVitesse[indexModeVitesse])
+        isModeVitesseChangedLastFrame = btnModeVitesse
+                 
         
         # Déplacement des fibres
         left_joystick_x = joystick.get_axis(0)
@@ -437,59 +458,31 @@ try:
         right_joystick_z_neg = joystick.get_axis(5)
         right_joystick_z = right_joystick_z_pos - (right_joystick_z_neg + 1)/2
 
+        # Tableau répertoriant pour chaque axe (colonne) comment on souhaite le modifier
+        # /!\ les axes du moteur sont différents des axes usuels : on a X, Y, Z = y, +/-x, z
+        buttons = np.array([[-right_joystick_y, -right_joystick_x, right_joystick_z], # y avant le x car l'horizontale (en regardant du haut) correspond à l'axe y du moteur
+                            [-left_joystick_y, left_joystick_x, left_joystick_z]])
         
-        buttons = np.array([[right_joystick_x, right_joystick_y, right_joystick_z], 
-                            [left_joystick_x, left_joystick_y, left_joystick_z]])
+        isTouched_list = np.array([[(np.abs(right_joystick_y) > 0.1), (np.abs(right_joystick_x) > 0.1), right_joystick_z_pos != 0 or right_joystick_z_neg != -1],
+                                   [(np.abs(left_joystick_y) > 0.1), (np.abs(left_joystick_x) > 0.1), left_joystick_z_pos != 0 or left_joystick_z_neg != -1]])
         
-        isTouched_list = np.array([[(np.abs(right_joystick_x) > 0.1), (np.abs(right_joystick_y) > 0.1), right_joystick_z_pos != 0 or right_joystick_z_neg != -1],
-                                   [(np.abs(left_joystick_x) > 0.1), (np.abs(left_joystick_y) > 0.1), left_joystick_z_pos != 0 or left_joystick_z_neg != -1]])
-        
-
 
                         
         direction = get_direction(buttons)
         
-        # Mode indépendant 
-        if indexMode == 0:              
+        # Mode création de la map du sample
+        btnCalibration = joystick.get_button(10)
+        if btnCalibration and not isCalibrationChangedLastFrame:
+            toggleCalibration = not toggleCalibration
+        isCalibrationChangedLastFrame = btnCalibration
+                
+                
+        if toggleCalibration:
             cmd = ''
             for addr in [1,2]:
                 for axis in [1,2,3]:
                     isTouched = isTouched_list[addr-1, axis-1]
                     if isTouched:
-                        # Mouvement visuel
-                        # if addr==1:
-                        #     if axis == 1:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre1_pos.x += velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
-                        #     elif axis == 2:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre1_pos.y += velocity[indexModeVitesse]*dt/10
-                        #     elif axis == 3:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre1_pos.z += velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
-                        # elif addr==2:
-                        #     if axis == 1:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre2_pos.x += velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
-                        #     elif axis == 2:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre2_pos.y += velocity[indexModeVitesse]*dt/10
-                        #     elif axis == 3:
-                        #         if direction[addr-1, axis-1] == '+':
-                        #             fibre2_pos.z += velocity[indexModeVitesse]*dt/10
-                        #         elif direction[addr-1, axis-1] == '-':
-                        #             fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
-                                    
                         # Commande Picomotor
                         if not isMoving[addr-1, axis-1]:
                             cmd += f"{addr}>{axis}MV{direction[addr-1, axis-1]};"
@@ -505,106 +498,134 @@ try:
                 cmd = cmd[:-1]
                 print(cmd)
                 o.query(cmd)
-
+            btnConfirm = joystick.get_button(1)
+            position_corner = o.get_all_positions()[1] # on pointe avec la fibre de gauche
+            
+            if (len(corners) == 0 and btnConfirm == 1) or (btnConfirm == 1 and len(corners) < 4 and not any(np.array_equal(position_corner, c) for c in corners)):
+                corners.append(position_corner)
+                print(f"point ajouté : position = {position_corner}")  
                 
-        # Mode pincettes
-        elif indexMode == 1:
-            cmd = ''
-            for axis in [1,2,3]:
+        else:
+            # Mode indépendant 
+            if indexMode == 0:              
+                cmd = ''
+                for addr in [1,2]:
+                    for axis in [1,2,3]:
+                        isTouched = isTouched_list[addr-1, axis-1]
+                        if isTouched:
+                            # Commande Picomotor
+                            if not isMoving[addr-1, axis-1]:
+                                cmd += f"{addr}>{axis}MV{direction[addr-1, axis-1]};"
+                                isMoving[addr-1, axis-1] = True
+                                
+                        else:
+                            if isMoving[addr-1, axis-1]:
+                                cmd += f"{addr}>{axis}ST;"
+                                isMoving[addr-1, axis-1] = False
+                                
+        
+                if cmd !='':
+                    cmd = cmd[:-1]
+                    print(cmd)
+                    o.query(cmd)
+    
+                    
+            # Mode pincettes
+            elif indexMode == 1:
+                cmd = ''
+                for axis in [1,2,3]:
+                    
+                    # Déplacement en bloc : joystick droit
+                    isTouchedRight = isTouched_list[0, axis-1] 
+                    if isTouchedRight:
+                        if not isMoving[0, axis-1]:
+                            if axis == 2:
+                                print('axis = 2')
+                                if direction[0,1] == '+':
+                                    print('+')
+                                    cmd += "1>2MV+;2>2MV-;"
+                                elif direction[0,1] == '-':
+                                    print('-')
+                                    cmd += "1>2MV-;2>2MV+;"
+                            else:
+                                cmd += f"1>{axis}MV{direction[0, axis-1]};2>{axis}MV{direction[0, axis-1]};"
+                            isMoving[0, axis-1] = True
+                    else:
+                        if isMoving[0, axis-1]:
+                            cmd += f"1>{axis}ST;2>{axis}ST;"
+                            isMoving[0, axis-1] = False
+                            
+                    # Déplacement opposé (pour pincer) : joystick gauche
+                    isTouchedLeft = isTouched_list[1, axis-1] 
+                    if isTouchedLeft and joystick.get_button(1)==1:
+                        # Commande Picomotor
+                        if not isMoving[1, axis-1]:
+                            if axis == 2:
+                                if direction[1, 1] == '+':
+                                    cmd += "1>2MV+;2>2MV+;"
+                                elif direction[1, 1] == '-':
+                                    cmd += "1>2MV-;2>2MV-;"
+                            else:                            
+                                if direction[1, axis-1] == '+':
+                                    cmd += f"1>{axis}MV+;2>{axis}MV-;"
+                                elif direction[1, axis-1] == '-':
+                                    cmd += f"1>{axis}MV-;2>{axis}MV+;"
+                            isMoving[1, axis-1] = True
+    
+                    else:
+                        if isMoving[1, axis-1]:
+                            cmd += f"1>{axis}ST;2>{axis}ST;"
+                            isMoving[1, axis-1] = False
+                            
+                if cmd != '':
+                    cmd = cmd[:-1]
+                    print(cmd)
+                    o.query(cmd)
                 
-                # Déplacement en bloc : joystick droit
-                isTouchedRight = isTouched_list[0, axis-1] 
-                if isTouchedRight:
-                    # Mouvement visuel
-                    # if axis == 1:
-                    #     if direction[0,0] == '+':
-                    #         fibre1_pos.x += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.x += velocity[indexModeVitesse]*dt/10
-                    #     elif direction[0,0] == '-':
-                    #         fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
-                    # elif axis == 2:
-                    #     if direction[0,1] == '+':
-                    #         fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
-                    #     elif direction[0,1] == '-':
-                    #         fibre1_pos.y += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.y += velocity[indexModeVitesse]*dt/10
-                    # elif axis == 3:
-                    #     if direction[0,2] == '+':
-                    #         fibre1_pos.z += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.z += velocity[indexModeVitesse]*dt/10
-                    #     elif direction[0,2] == '-':
-                    #         fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
-                    
-                    # Commande Picomotor
-                    if not isMoving[0, axis-1]:
-                        cmd += f"1>{axis}MV{direction[0, axis-1]};2>{axis}MV{direction[0, axis-1]};"
-                        isMoving[0, axis-1] = True
-                else:
-                    if isMoving[0, axis-1]:
-                        cmd += f"1>{axis}ST;2>{axis}ST;"
-                        isMoving[0, axis-1] = False
-                        
-                # Déplacement opposé (pour pincer) : joystick gauche
-                isTouchedLeft = isTouched_list[1, axis-1] 
-                if isTouchedLeft and joystick.get_button(1)==1:
-                    # Mouvement visuel
-                    # if axis == 1:
-                    #     if direction[1,0] == '+':
-                    #         fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.x += velocity[indexModeVitesse]*dt/10
-                    #     elif direction[1,0] == '-':
-                    #         fibre1_pos.x += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
-                    # elif axis == 2:
-                    #     if direction[1,1] == '+':
-                    #         fibre1_pos.y += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
-                    #     elif direction[1,1] == '-':
-                    #         fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.y += velocity[indexModeVitesse]*dt/10
-                    # elif axis == 3:
-                    #     if direction[1,2] == '+':
-                    #         fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.z += velocity[indexModeVitesse]*dt/10
-                    #     elif direction[1,2] == '-':
-                    #         fibre1_pos.z += velocity[indexModeVitesse]*dt/10
-                    #         fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
-                    
-                    # Commande Picomotor
-                    if not isMoving[1, axis-1]:
-                        if direction[1, axis-1] == '+':
-                            cmd += f"1>{axis}MV+;2>{axis}MV-;"
-                        elif direction[1, axis-1] == '-':
-                            cmd += f"1>{axis}MV-;2>{axis}MV+;"
-                        isMoving[1, axis-1] = True
-
-                else:
-                    if isMoving[1, axis-1]:
-                        cmd += f"1>{axis}ST;2>{axis}ST;"
-                        isMoving[1, axis-1] = False
-                        
-            if cmd != '':
-                cmd = cmd[:-1]
-                print(cmd)
-                o.query(cmd)
+        
+        if len(corners) == 4 and not CalibrationDone:
+            corners = np.array(corners)
+            # maxLength_Steps = max([max(corners[:,0]), max(corners[:,1])]) - min([min(corners[:,0]), min(corners[:,1])]) 
+            maxHeight_Steps = max(corners[:,1]) - min(corners[:,1])
+            maxWidth_Steps = max(corners[:,0]) - min(corners[:,0])
+            maxLength_Steps = max([maxHeight_Steps, maxWidth_Steps])
+            maxHeight_Screen = 3*screen.get_height()/4
+            alpha = maxHeight_Screen/maxLength_Steps #on prend max height car c'est un carré donc peut importe la dimension qu'on prend
+            corners_screen = []
+            pos_G = (sum(corners[:,0])/4, sum(corners[:,1])/4 + 100)
+            for position_corner in corners:
+                print(position_corner[:-1])
+                corners_screen.append(positionOnScreen([position_corner[1], position_corner[0]], pos_G))
+            CalibrationDone = True
+                
+        elif CalibrationDone:
+            pygame.draw.polygon(screen, "grey", corners_screen)
+           
                 
         positions = o.get_all_positions()
-        fibre1_pos.x, fibre1_pos.y, fibre1_pos.z = positions[0]
-        fibre2_pos.x, fibre2_pos.y, fibre2_pos.z = positions[1]
+        fibre1_pos.x, fibre1_pos.y = positionOnScreen((-positions[0,1], -positions[0,0]), pos_G)
+        fibre2_pos.x, fibre2_pos.y = positionOnScreen((positions[1,1], -positions[1,0]), pos_G)
+        # fibre1_pos.y, fibre1_pos.x, fibre1_pos.z = positions[0]
+        # fibre2_pos.y, fibre2_pos.x, fibre2_pos.z = positions[1]
         
-        pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y), (fibre1_pos.x, fibre1_pos.y), width=1)
-        pygame.draw.line(screen, "blue", (0, fibre2_pos.y), (fibre2_pos.x, fibre2_pos.y), width=1)
+        # pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10 +center[1]), (-fibre1_pos.x/10 +center[0], fibre1_pos.y/10 +center[1]), width=1)
+        # pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10 +center[1]), (fibre2_pos.x/10, fibre2_pos.y/10 +center[1]), width=1)
+        
+        pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10), (fibre1_pos.x/10, fibre1_pos.y/10), width=1)
+        pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10), (fibre2_pos.x/10, fibre2_pos.y/10), width=1)
                 
         text_print.tprint(screen, '')
-        text_print.tprint(screen, f"Fiber 1 : x = {fibre1_pos.x:.0f}, y = {fibre1_pos.y:.0f}, z = {fibre1_pos.z:.0f}")
-        text_print.tprint(screen, f"Fiber 2 : x = {fibre2_pos.x:.0f}, y = {fibre2_pos.y:.0f}, z = {fibre2_pos.z:.0f}")
-                
+        # text_print.tprint(screen, f"Motor 1 : x (axis 2) = {fibre1_pos.x:.0f}, y (axis 1) = {fibre1_pos.y:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
+        # text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {fibre2_pos.x:.0f}, y (axis 1) = {fibre2_pos.y:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
+        
+        text_print.tprint(screen, f"Motor 1 : x (axis 2) = {-positions[0,1]:.0f}, y (axis 1) = {positions[0,0]:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
+        text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {positions[1,1]:.0f}, y (axis 1) = {positions[1,0]:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
+        
+        
         pygame.display.flip()
         
         dt = clock.tick(60) / 1000
+
 
 
 except KeyboardInterrupt:
@@ -612,3 +633,4 @@ except KeyboardInterrupt:
 
 finally:
     pygame.quit()
+    
