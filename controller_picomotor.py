@@ -1,10 +1,16 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun  5 11:43:32 2025
+
+@author: Alok
+"""
+
 import sys
 import os
 import inspect
 # Import the .NET Common Language Runtime (CLR) to allow interaction with .NET
 import clr
 import numpy as np
-import time
 import pygame
 
 print ("Python %s\n\n" % (sys.version,))
@@ -201,11 +207,45 @@ class picomotor:
     def query(self, cmd):
         strDeviceKey = self.DeviceKeys[0]
         strBldr = StringBuilder(64)
+        strBldr.Remove (0, strBldr.Length)
         nReturn = deviceIO.Query(strDeviceKey, cmd, strBldr)
+        #print(nReturn)
         if nReturn:
             print(strBldr.ToString())
         else:
             print('error')
+            
+    def get_all_positions(self):
+        strDeviceKey = self.DeviceKeys[0]
+        positions = np.zeros((2,3))
+        for addr in [1,2]:
+            for axis in [1,2,3]:
+                refPosition = 0
+                nReturn, position = cmdLib8742.GetPosition(strDeviceKey, addr, axis, refPosition)
+                if nReturn:
+                    positions[addr-1, axis-1] = position
+        return positions
+    
+    def get_position2(self, addr, axis):
+        strDeviceKey = self.DeviceKeys[0]
+        refPosition = 0
+        nReturn, position = cmdLib8742.GetPosition(strDeviceKey, addr, axis, refPosition)
+        if nReturn:
+            return position
+        else:
+            print(f"erreur : nReturn={nReturn} & position={position}")
+            
+    def set_all_velocity(self, stepsPerSec):
+        strDeviceKey = self.DeviceKeys[0]
+        for addr in [1,2]:
+            for axis in [1,2,3]:
+                nReturn = cmdLib8742.SetVelocity(strDeviceKey, addr, axis, stepsPerSec)
+                
+    def go_home(self):
+        strDeviceKey = self.DeviceKeys[0]
+        for addr in [1,2]:
+            for axis in [1,2,3]:
+                nReturn = cmdLib8742.MoveToHome(strDeviceKey, addr, axis)
     
     
     # def query(self, key, cmd):
@@ -218,15 +258,24 @@ class picomotor:
 
 o = picomotor()
 o.system_info()
-o.query('2>3TP?')
-
+o.query('1>3TP?')
 
 o.query('1>3MV+')
 o.query('1>3ST')
-1>3ST
 
+o.get_position2(1,3)
+o.get_all_positions()
 
+o.set_all_velocity(1001)
 
+o.query('1>1DH?')
+o.query('1>2DH?')
+o.query('1>3DH?')
+o.query('2>1DH?')
+o.query('2>2DH?')
+o.query('2>3DH?')
+
+o.go_home()
 
 #o.shutdown()
 
@@ -236,7 +285,7 @@ o.query('1>3ST')
 
 pygame.init()
 pygame.joystick.init()
-screen = pygame.display.set_mode((400, 400))
+screen = pygame.display.set_mode((800, 800))
 pygame.display.set_caption("Contrôle clavier")
 clock = pygame.time.Clock()
 running = True
@@ -275,36 +324,49 @@ joystick = pygame.joystick.Joystick(0)
 joystick.init()
 print(f"Manette détectée : {joystick.get_name()} \n")
 
-# Définition des modes de vitesses 
-slow_velocity = 200 #steps/s
-medium_velocity = 1000 #steps/s
-fast_velocity = 2000 #steps/s
-velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
 
 # Initialisation du mode de déplacement
 indexMode = 0
-Mode = np.array(['mode1 (fibres indépendentes)', 'mode2 (pincettes)'])
+Mode = np.array(['independent fibers', 'simultaneous'])
 actualMode = Mode[indexMode]
 isModeChanged = False
 print(f"Mode choisi par défault : {actualMode}")
 
 # Initialisation du mode de vitesse
+slow_velocity = 100 #steps/s
+medium_velocity = 500 #steps/s
+fast_velocity = 1000 #steps/s
+velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
+ModeVitesse = np.array(['slow', 'medium', 'fast'])
+
 indexModeVitesse = 0
-ModeVitesse = np.array(['mode1 (slow)', 'mode2 (medium)', 'mode3 (fast)'])
-cmdModeVitesse = np.array([f'1>1VA{slow_velocity};1>2VA{slow_velocity};1>3VA{slow_velocity};2>1VA{slow_velocity};2>2VA{slow_velocity};2>3VA{slow_velocity}', 
-                    f'1>1VA{medium_velocity};1>2VA{medium_velocity};1>3VA{medium_velocity};2>1VA{medium_velocity};2>2VA{medium_velocity};2>3VA{medium_velocity}', 
-                    f'1>1VA{fast_velocity};1>2VA{fast_velocity};1>3VA{fast_velocity};2>1VA{fast_velocity};2>2VA{fast_velocity};2>3VA{fast_velocity}'])
+o.set_all_velocity(int(velocity[indexModeVitesse]))
 actualModeVitesse = ModeVitesse[indexModeVitesse]
 isModeVitesseChanged = False
 print(f"Mode de vitesse choisi par défaut : {actualModeVitesse}")
+
 
 # Initialisation du mouvement des moteurs (immobiles au démarrage)
 isMoving = np.array([[False, False, False], # right : x, y, z
                      [False, False, False]]) # left : x, y, z
 
 
-fibre1_pos = pygame.Vector2(2*screen.get_width() / 3, screen.get_height() / 2)
-fibre2_pos = pygame.Vector2(screen.get_width() / 3, screen.get_height() / 2)
+fibre1_pos = pygame.Vector3(2*screen.get_width() / 3, screen.get_height() / 2, 0)
+fibre2_pos = pygame.Vector3(screen.get_width() / 3, screen.get_height() / 2, 0)
+
+def get_direction(buttons):
+    direction = np.zeros_like(buttons, str)
+    for i in range(len(buttons)):
+        #print(f"i = {i}")
+        for j in range(len(buttons[i])):
+            #print(f"j = {j}, signe = {np.sign(buttons[i,j])}")
+            if np.sign(buttons[i,j]) == 1:
+                direction[i,j] = '+'
+            elif np.sign(buttons[i,j]) == -1:
+                direction[i,j] = '-'
+            else:
+                direction[i,j] = '0'
+    return direction
 
 # Main code
 try:
@@ -313,17 +375,8 @@ try:
         # Affichage des modes de déplacement et de vitesse
         screen.fill((255, 255, 255))
         text_print.reset()
-        text_print.tprint(screen, "Mode de déplacement:")
-        text_print.indent()
-        text_print.tprint(screen, actualMode)
-        text_print.unindent()
-        text_print.tprint(screen, "Mode de vitesse:")
-        text_print.indent()
-        text_print.tprint(screen, actualModeVitesse)
-        text_print.unindent()
-        
-        pygame.draw.circle(screen, "red", fibre1_pos, 4)
-        pygame.draw.circle(screen, "blue", fibre2_pos, 4)
+        text_print.tprint(screen, f"Mode : {actualMode}")
+        text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")        
         
         # Manières d'arreter le "jeu" : fermer la fenêtre, appuyer sur espace, interrompre le noyau
         for event in pygame.event.get():
@@ -333,6 +386,13 @@ try:
                 if event.key == pygame.K_SPACE:
                     print("Espace pressée, arrêt du programme.")
                     running = False
+                    
+        # # Stop all motion immediately
+        # btnAbort = joystick.get_button(10)
+        # if btnAbort == 1:
+        #     o.abort_motion()
+            
+        
         
         # Changement de mode de déplacement
         btnMode = joystick.get_button(6)
@@ -340,7 +400,7 @@ try:
         if btnMode == 1:
             if not isModeChanged:
                 indexMode += 1
-                indexMode = indexMode%2
+                indexMode = indexMode%len(Mode)
                 actualMode = Mode[indexMode]
                 print(f"Déplacement : {actualMode}")
                 isModeChanged = True
@@ -353,10 +413,11 @@ try:
         if btnModeVitesse == 1:
             if not isModeVitesseChanged:
                 indexModeVitesse += 1
-                indexModeVitesse = indexModeVitesse%3
+                indexModeVitesse = indexModeVitesse%len(ModeVitesse)
                 actualModeVitesse = ModeVitesse[indexModeVitesse]
+                o.set_all_velocity(int(velocity[indexModeVitesse]))
                 print(f"Vitesse : {actualModeVitesse}")
-                print(cmdModeVitesse[indexModeVitesse])
+                # print(cmdModeVitesse[indexModeVitesse])
                 isModeVitesseChanged = True
         if btnModeVitesse == 0:
             if isModeVitesseChanged:
@@ -384,19 +445,7 @@ try:
                                    [(np.abs(left_joystick_x) > 0.1), (np.abs(left_joystick_y) > 0.1), left_joystick_z_pos != 0 or left_joystick_z_neg != -1]])
         
 
-        def get_direction(buttons):
-            direction = np.zeros_like(buttons, str)
-            for i in range(len(buttons)):
-                #print(f"i = {i}")
-                for j in range(len(buttons[i])):
-                    #print(f"j = {j}, signe = {np.sign(buttons[i,j])}")
-                    if np.sign(buttons[i,j]) == 1:
-                        direction[i,j] = '+'
-                    elif np.sign(buttons[i,j]) == -1:
-                        direction[i,j] = '-'
-                    else:
-                        direction[i,j] = '0'
-            return direction
+
                         
         direction = get_direction(buttons)
         
@@ -408,28 +457,38 @@ try:
                     isTouched = isTouched_list[addr-1, axis-1]
                     if isTouched:
                         # Mouvement visuel
-                        if addr==1:
-                            if axis == 1:
-                                if direction[addr-1, axis-1] == '+':
-                                    fibre1_pos.x += velocity[indexModeVitesse]*dt/10
-                                elif direction[addr-1, axis-1] == '-':
-                                    fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
-                            elif axis == 2:
-                                if direction[addr-1, axis-1] == '+':
-                                    fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
-                                elif direction[addr-1, axis-1] == '-':
-                                    fibre1_pos.y += velocity[indexModeVitesse]*dt/10
-                        elif addr==2:
-                            if axis == 1:
-                                if direction[addr-1, axis-1] == '+':
-                                    fibre2_pos.x += velocity[indexModeVitesse]*dt/10
-                                elif direction[addr-1, axis-1] == '-':
-                                    fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
-                            elif axis == 2:
-                                if direction[addr-1, axis-1] == '+':
-                                    fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
-                                elif direction[addr-1, axis-1] == '-':
-                                    fibre2_pos.y += velocity[indexModeVitesse]*dt/10
+                        # if addr==1:
+                        #     if axis == 1:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre1_pos.x += velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
+                        #     elif axis == 2:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre1_pos.y += velocity[indexModeVitesse]*dt/10
+                        #     elif axis == 3:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre1_pos.z += velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
+                        # elif addr==2:
+                        #     if axis == 1:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre2_pos.x += velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
+                        #     elif axis == 2:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre2_pos.y += velocity[indexModeVitesse]*dt/10
+                        #     elif axis == 3:
+                        #         if direction[addr-1, axis-1] == '+':
+                        #             fibre2_pos.z += velocity[indexModeVitesse]*dt/10
+                        #         elif direction[addr-1, axis-1] == '-':
+                        #             fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
                                     
                         # Commande Picomotor
                         if not isMoving[addr-1, axis-1]:
@@ -446,6 +505,7 @@ try:
                 cmd = cmd[:-1]
                 print(cmd)
                 o.query(cmd)
+
                 
         # Mode pincettes
         elif indexMode == 1:
@@ -456,22 +516,28 @@ try:
                 isTouchedRight = isTouched_list[0, axis-1] 
                 if isTouchedRight:
                     # Mouvement visuel
-                    if axis == 1:
-                        if direction[0,0] == '+':
-                            fibre1_pos.x += velocity[indexModeVitesse]*dt/10
-                            fibre2_pos.x += velocity[indexModeVitesse]*dt/10
-                        elif direction[0,0] == '-':
-                            fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
-                            fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
-                    elif axis == 2:
-                        if direction[0,1] == '+':
-                            fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
-                            fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
-                        elif direction[0,1] == '-':
-                            fibre1_pos.y += velocity[indexModeVitesse]*dt/10
-                            fibre2_pos.y += velocity[indexModeVitesse]*dt/10
-
-                                
+                    # if axis == 1:
+                    #     if direction[0,0] == '+':
+                    #         fibre1_pos.x += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.x += velocity[indexModeVitesse]*dt/10
+                    #     elif direction[0,0] == '-':
+                    #         fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
+                    # elif axis == 2:
+                    #     if direction[0,1] == '+':
+                    #         fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
+                    #     elif direction[0,1] == '-':
+                    #         fibre1_pos.y += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.y += velocity[indexModeVitesse]*dt/10
+                    # elif axis == 3:
+                    #     if direction[0,2] == '+':
+                    #         fibre1_pos.z += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.z += velocity[indexModeVitesse]*dt/10
+                    #     elif direction[0,2] == '-':
+                    #         fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
+                    
                     # Commande Picomotor
                     if not isMoving[0, axis-1]:
                         cmd += f"1>{axis}MV{direction[0, axis-1]};2>{axis}MV{direction[0, axis-1]};"
@@ -483,13 +549,38 @@ try:
                         
                 # Déplacement opposé (pour pincer) : joystick gauche
                 isTouchedLeft = isTouched_list[1, axis-1] 
-                if isTouchedLeft:
+                if isTouchedLeft and joystick.get_button(1)==1:
+                    # Mouvement visuel
+                    # if axis == 1:
+                    #     if direction[1,0] == '+':
+                    #         fibre1_pos.x -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.x += velocity[indexModeVitesse]*dt/10
+                    #     elif direction[1,0] == '-':
+                    #         fibre1_pos.x += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.x -= velocity[indexModeVitesse]*dt/10
+                    # elif axis == 2:
+                    #     if direction[1,1] == '+':
+                    #         fibre1_pos.y += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.y -= velocity[indexModeVitesse]*dt/10
+                    #     elif direction[1,1] == '-':
+                    #         fibre1_pos.y -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.y += velocity[indexModeVitesse]*dt/10
+                    # elif axis == 3:
+                    #     if direction[1,2] == '+':
+                    #         fibre1_pos.z -= velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.z += velocity[indexModeVitesse]*dt/10
+                    #     elif direction[1,2] == '-':
+                    #         fibre1_pos.z += velocity[indexModeVitesse]*dt/10
+                    #         fibre2_pos.z -= velocity[indexModeVitesse]*dt/10
+                    
+                    # Commande Picomotor
                     if not isMoving[1, axis-1]:
                         if direction[1, axis-1] == '+':
                             cmd += f"1>{axis}MV+;2>{axis}MV-;"
                         elif direction[1, axis-1] == '-':
                             cmd += f"1>{axis}MV-;2>{axis}MV+;"
                         isMoving[1, axis-1] = True
+
                 else:
                     if isMoving[1, axis-1]:
                         cmd += f"1>{axis}ST;2>{axis}ST;"
@@ -498,6 +589,18 @@ try:
             if cmd != '':
                 cmd = cmd[:-1]
                 print(cmd)
+                o.query(cmd)
+                
+        positions = o.get_all_positions()
+        fibre1_pos.x, fibre1_pos.y, fibre1_pos.z = positions[0]
+        fibre2_pos.x, fibre2_pos.y, fibre2_pos.z = positions[1]
+        
+        pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y), (fibre1_pos.x, fibre1_pos.y), width=1)
+        pygame.draw.line(screen, "blue", (0, fibre2_pos.y), (fibre2_pos.x, fibre2_pos.y), width=1)
+                
+        text_print.tprint(screen, '')
+        text_print.tprint(screen, f"Fiber 1 : x = {fibre1_pos.x:.0f}, y = {fibre1_pos.y:.0f}, z = {fibre1_pos.z:.0f}")
+        text_print.tprint(screen, f"Fiber 2 : x = {fibre2_pos.x:.0f}, y = {fibre2_pos.y:.0f}, z = {fibre2_pos.z:.0f}")
                 
         pygame.display.flip()
         
