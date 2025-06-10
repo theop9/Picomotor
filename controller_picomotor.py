@@ -12,6 +12,7 @@ import inspect
 import clr
 import numpy as np
 import pygame
+import time
 
 print ("Python %s\n\n" % (sys.version,))
 
@@ -278,6 +279,14 @@ o.query('2>3DH?')
 o.go_home()
 
 #o.shutdown()
+t1 = time.time()
+cmdLib8742.JogPositive(strDeviceKey, 1, 1)
+t2 = time.time()
+cmdLib8742.StopMotion(strDeviceKey, 1, 1)
+t3 = time.time()
+print(t3-t1)
+print(t3-t2)
+print(t2-t1)
 
 #%%
 
@@ -309,10 +318,10 @@ class TextPrint:
         self.line_height = 15
 
     def indent(self):
-        self.x += 10
+        self.x += 20
 
     def unindent(self):
-        self.x -= 10
+        self.x -= 20
 
 text_print = TextPrint()
 
@@ -334,7 +343,7 @@ def coord_to_screen(pos):
     return (pos[0] + center[0], -pos[1] + center[1])
 
 def positionOnScreen(pos, pos_G):
-    return(screen.get_width()/2 + alpha*(pos[0] - pos_G[0]), screen.get_height()/2 - alpha*(pos[1] - pos_G[1]))
+    return(screen.get_width()/2 + alpha*(pos[1] - pos_G[1]), screen.get_height()/2 + alpha*(pos[0] - pos_G[0]))
 
 # Détection de la manette
 if pygame.joystick.get_count() == 0:
@@ -382,8 +391,10 @@ isMoving = np.array([[False, False, False], # right : x, y, z
 # Initialisation du mode de calibration coordonnées x,y des coins du sample
 toggleCalibration = False
 isCalibrationChangedLastFrame = False
-CalibrationDone = False
+Calibration_Step1 = False
+Calibration_Step2 = False
 corners = [] 
+isCorner = [ 'No', 'No', 'No', 'No']
 
 
 fibre1_pos = pygame.Vector3(0, 0, 0)
@@ -399,14 +410,21 @@ try:
         screen.fill((255, 255, 255))
         text_print.reset()
         text_print.tprint(screen, f"CALIBRATION : {toggleCalibration}")
+        text_print.indent()
+        text_print.tprint(screen, f"STEP 1 : {Calibration_Step1}")
+        text_print.indent()
+        text_print.tprint(screen, f"corners : {isCorner[0]}, {isCorner[1]}, {isCorner[2]}, {isCorner[3]}")
+        text_print.unindent()
+        text_print.tprint(screen, f"STEP 2 : {Calibration_Step2}")
+        text_print.unindent()
         text_print.tprint(screen, f"Mode : {actualMode}")
         text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")
         
         # Affichage des home positions
-        pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y - 2), ((home_1_x + 2, home_1_y + 2)), width=1)
-        pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y + 2), ((home_1_x + 2, home_1_y - 2)), width=1)
-        pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y - 2), ((home_2_x + 2, home_2_y + 2)), width=1)
-        pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y + 2), ((home_2_x + 2, home_2_y - 2)), width=1)
+        # pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y - 2), ((home_1_x + 2, home_1_y + 2)), width=1)
+        # pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y + 2), ((home_1_x + 2, home_1_y - 2)), width=1)
+        # pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y - 2), ((home_2_x + 2, home_2_y + 2)), width=1)
+        # pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y + 2), ((home_2_x + 2, home_2_y - 2)), width=1)
         
         # Manières d'arreter le "jeu" : fermer la fenêtre, appuyer sur espace, interrompre le noyau
         for event in pygame.event.get():
@@ -478,32 +496,61 @@ try:
                 
                 
         if toggleCalibration:
-            cmd = ''
-            for addr in [1,2]:
+            # Step 1 : pointage des coins de l'échantillon avec la fibre de gauche
+            if not Calibration_Step1:
+                cmd = ''
                 for axis in [1,2,3]:
-                    isTouched = isTouched_list[addr-1, axis-1]
+                    isTouched = isTouched_list[1, axis-1]
                     if isTouched:
                         # Commande Picomotor
-                        if not isMoving[addr-1, axis-1]:
-                            cmd += f"{addr}>{axis}MV{direction[addr-1, axis-1]};"
-                            isMoving[addr-1, axis-1] = True
+                        if not isMoving[1, axis-1]:
+                            cmd += f"2>{axis}MV{direction[1, axis-1]};"
+                            isMoving[1, axis-1] = True
                             
                     else:
-                        if isMoving[addr-1, axis-1]:
-                            cmd += f"{addr}>{axis}ST;"
-                            isMoving[addr-1, axis-1] = False
+                        if isMoving[1, axis-1]:
+                            cmd += f"2>{axis}ST;"
+                            isMoving[1, axis-1] = False
+                                
+        
+                if cmd !='':
+                    cmd = cmd[:-1]
+                    print(cmd)
+                    o.query(cmd)
+                btnConfirm = joystick.get_button(1)
+                position_corner = o.get_all_positions()[1] # on pointe avec la fibre de gauche
+                
+                if (len(corners) == 0 and btnConfirm == 1) or (btnConfirm == 1 and len(corners) < 4 and not any(np.array_equal(position_corner, c) for c in corners)):
+                    corners.append(position_corner)
+                    isCorner[len(corners)-1] = 'Ok'
+                    print(f"point ajouté : position = {position_corner}")  
+                    
+            # Step 2 : Coordination avec la fibre gauche
+            elif Calibration_Step1 and not Calibration_Step2:
+                cmd = ''
+                for axis in [1,2,3]:
+                    isTouched = isTouched_list[0, axis-1]
+                    if isTouched:
+                        # Commande Picomotor
+                        if not isMoving[0, axis-1]:
+                            cmd += f"1>{axis}MV{direction[0, axis-1]};"
+                            isMoving[0, axis-1] = True
                             
-    
-            if cmd !='':
-                cmd = cmd[:-1]
-                print(cmd)
-                o.query(cmd)
-            btnConfirm = joystick.get_button(1)
-            position_corner = o.get_all_positions()[1] # on pointe avec la fibre de gauche
-            
-            if (len(corners) == 0 and btnConfirm == 1) or (btnConfirm == 1 and len(corners) < 4 and not any(np.array_equal(position_corner, c) for c in corners)):
-                corners.append(position_corner)
-                print(f"point ajouté : position = {position_corner}")  
+                    else:
+                        if isMoving[0, axis-1]:
+                            cmd += f"1>{axis}ST;"
+                            isMoving[0, axis-1] = False
+                if cmd !='':
+                    cmd = cmd[:-1]
+                    print(cmd)
+                    o.query(cmd)
+
+                btnConfirm = joystick.get_button(1)
+
+                if btnConfirm == 1:
+                    position_pointage = o.get_all_positions()[0] # fibre de droite cette fois ci
+                    Calibration_Step2 = True
+                
                 
         else:
             # Mode indépendant 
@@ -527,7 +574,10 @@ try:
                 if cmd !='':
                     cmd = cmd[:-1]
                     print(cmd)
+                    t1 = time.time()
                     o.query(cmd)
+                    t2 = time.time()
+                    print(t2-t1)
     
                     
             # Mode pincettes
@@ -581,9 +631,11 @@ try:
                     cmd = cmd[:-1]
                     print(cmd)
                     o.query(cmd)
+                    
+        CalibrationDone = Calibration_Step1 and Calibration_Step2
                 
         
-        if len(corners) == 4 and not CalibrationDone:
+        if len(corners) == 4 and not Calibration_Step1 :
             corners = np.array(corners)
             # maxLength_Steps = max([max(corners[:,0]), max(corners[:,1])]) - min([min(corners[:,0]), min(corners[:,1])]) 
             maxHeight_Steps = max(corners[:,1]) - min(corners[:,1])
@@ -592,36 +644,47 @@ try:
             maxHeight_Screen = 3*screen.get_height()/4
             alpha = maxHeight_Screen/maxLength_Steps #on prend max height car c'est un carré donc peut importe la dimension qu'on prend
             corners_screen = []
-            pos_G = (sum(corners[:,0])/4, sum(corners[:,1])/4 + 100)
+            pos_G = (sum(corners[:,0])/4, sum(corners[:,1])/4)
+            print(alpha)
+            print(pos_G)
             for position_corner in corners:
                 print(position_corner[:-1])
-                corners_screen.append(positionOnScreen([position_corner[1], position_corner[0]], pos_G))
-            CalibrationDone = True
+                corners_screen.append(positionOnScreen(position_corner[:-1], pos_G))
+            Calibration_Step1 = True
+            time.sleep(0.5)
+            print(corners_screen)
+            
+        
                 
+        elif Calibration_Step1 and not CalibrationDone:
+            pygame.draw.polygon(screen, "grey", corners_screen)
+            
         elif CalibrationDone:
             pygame.draw.polygon(screen, "grey", corners_screen)
-           
-                
-        positions = o.get_all_positions()
-        fibre1_pos.x, fibre1_pos.y = positionOnScreen((-positions[0,1], -positions[0,0]), pos_G)
-        fibre2_pos.x, fibre2_pos.y = positionOnScreen((positions[1,1], -positions[1,0]), pos_G)
-        # fibre1_pos.y, fibre1_pos.x, fibre1_pos.z = positions[0]
-        # fibre2_pos.y, fibre2_pos.x, fibre2_pos.z = positions[1]
+            positions = o.get_all_positions()
+            fibre1_pos.x, fibre1_pos.y = positionOnScreen(positions[0,:-1] - position_pointage[:-1] + corners[-1,:-1], pos_G)
+            fibre2_pos.x, fibre2_pos.y = positionOnScreen(positions[1,:-1], pos_G)
+            fibre1_pos.z, fibre2_pos.z = positions[:,2]
+            # fibre1_pos.y, fibre1_pos.x, fibre1_pos.z = positions[0]
+            # fibre2_pos.y, fibre2_pos.x, fibre2_pos.z = positions[1]
+            
+            # pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10 +center[1]), (-fibre1_pos.x/10 +center[0], fibre1_pos.y/10 +center[1]), width=1)
+            # pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10 +center[1]), (fibre2_pos.x/10, fibre2_pos.y/10 +center[1]), width=1)
+            
+            pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y), (fibre1_pos.x, fibre1_pos.y), width=1)
+            pygame.draw.line(screen, "blue", (0, fibre2_pos.y), (fibre2_pos.x, fibre2_pos.y), width=1)
+            
+            print(fibre2_pos.x, fibre2_pos.y)
+            print(fibre1_pos.x, fibre1_pos.y)
+                    
+            text_print.tprint(screen, '')
+            # text_print.tprint(screen, f"Motor 1 : x (axis 2) = {fibre1_pos.x:.0f}, y (axis 1) = {fibre1_pos.y:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
+            # text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {fibre2_pos.x:.0f}, y (axis 1) = {fibre2_pos.y:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
+            
+            text_print.tprint(screen, f"Motor 1 : x (axis 2) = {positions[0,1]:.0f}, y (axis 1) = {positions[0,0]:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
+            text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {positions[1,1]:.0f}, y (axis 1) = {positions[1,0]:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
         
-        # pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10 +center[1]), (-fibre1_pos.x/10 +center[0], fibre1_pos.y/10 +center[1]), width=1)
-        # pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10 +center[1]), (fibre2_pos.x/10, fibre2_pos.y/10 +center[1]), width=1)
-        
-        pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10), (fibre1_pos.x/10, fibre1_pos.y/10), width=1)
-        pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10), (fibre2_pos.x/10, fibre2_pos.y/10), width=1)
-                
-        text_print.tprint(screen, '')
-        # text_print.tprint(screen, f"Motor 1 : x (axis 2) = {fibre1_pos.x:.0f}, y (axis 1) = {fibre1_pos.y:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
-        # text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {fibre2_pos.x:.0f}, y (axis 1) = {fibre2_pos.y:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
-        
-        text_print.tprint(screen, f"Motor 1 : x (axis 2) = {-positions[0,1]:.0f}, y (axis 1) = {positions[0,0]:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
-        text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {positions[1,1]:.0f}, y (axis 1) = {positions[1,0]:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
-        
-        
+        #print(CalibrationDone)
         pygame.display.flip()
         
         dt = clock.tick(60) / 1000
