@@ -247,6 +247,11 @@ class picomotor:
         for addr in [1,2]:
             for axis in [1,2,3]:
                 nReturn = cmdLib8742.MoveToHome(strDeviceKey, addr, axis)
+                
+    def AB(self):
+        strDeviceKey = self.DeviceKeys[0]
+        cmdLib8742.AbortMotion(strDeviceKey, 1)
+        cmdLib8742.AbortMotion(strDeviceKey, 2)
     
     
     # def query(self, key, cmd):
@@ -288,9 +293,13 @@ print(t3-t1)
 print(t3-t2)
 print(t2-t1)
 
+strDeviceKey = o.DeviceKeys[0]
+cmdLib8742.AbortMotion(strDeviceKey, 1)
+cmdLib8742.AbortMotion(strDeviceKey, 2)
+
 #%%
 
-
+strDeviceKey = o.DeviceKeys[0]
 
 pygame.init()
 pygame.joystick.init()
@@ -417,6 +426,7 @@ try:
         text_print.unindent()
         text_print.tprint(screen, f"STEP 2 : {Calibration_Step2}")
         text_print.unindent()
+        text_print.tprint(screen, ' ')
         text_print.tprint(screen, f"Mode : {actualMode}")
         text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")
         
@@ -434,13 +444,7 @@ try:
                 if event.key == pygame.K_SPACE:
                     print("Espace pressée, arrêt du programme.")
                     running = False
-                    
-        # # Stop all motion immediately
-        # btnAbort = joystick.get_button(10)
-        # if btnAbort == 1:
-        #     o.abort_motion()
-            
-        
+
         
         # Changement de mode de déplacement
         btnMode = joystick.get_button(6)
@@ -502,14 +506,16 @@ try:
                 for axis in [1,2,3]:
                     isTouched = isTouched_list[1, axis-1]
                     if isTouched:
-                        # Commande Picomotor
                         if not isMoving[1, axis-1]:
-                            cmd += f"2>{axis}MV{direction[1, axis-1]};"
+                            if np.sign(buttons[1, axis-1]) == 1:
+                                cmdLib8742.JogPositive(strDeviceKey, 2, axis)
+                            elif np.sign(buttons[1, axis-1]) == -1:
+                                cmdLib8742.JogNegative(strDeviceKey, 2, axis)
                             isMoving[1, axis-1] = True
                             
                     else:
                         if isMoving[1, axis-1]:
-                            cmd += f"2>{axis}ST;"
+                            cmdLib8742.StopMotion(strDeviceKey, 2, axis)
                             isMoving[1, axis-1] = False
                                 
         
@@ -531,15 +537,17 @@ try:
                 for axis in [1,2,3]:
                     isTouched = isTouched_list[0, axis-1]
                     if isTouched:
-                        # Commande Picomotor
                         if not isMoving[0, axis-1]:
-                            cmd += f"1>{axis}MV{direction[0, axis-1]};"
+                            if np.sign(buttons[0, axis-1]) == 1:
+                                cmdLib8742.JogPositive(strDeviceKey, 1, axis)
+                            elif np.sign(buttons[0, axis-1]) == -1:
+                                cmdLib8742.JogNegative(strDeviceKey, 1, axis)
                             isMoving[0, axis-1] = True
-                            
                     else:
                         if isMoving[0, axis-1]:
-                            cmd += f"1>{axis}ST;"
+                            cmdLib8742.StopMotion(strDeviceKey, 1, axis)
                             isMoving[0, axis-1] = False
+                            
                 if cmd !='':
                     cmd = cmd[:-1]
                     print(cmd)
@@ -560,14 +568,16 @@ try:
                     for axis in [1,2,3]:
                         isTouched = isTouched_list[addr-1, axis-1]
                         if isTouched:
-                            # Commande Picomotor
                             if not isMoving[addr-1, axis-1]:
-                                cmd += f"{addr}>{axis}MV{direction[addr-1, axis-1]};"
+                                if np.sign(buttons[addr-1, axis-1]) == 1:
+                                    cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                elif np.sign(buttons[addr-1, axis-1]) == -1:
+                                    cmdLib8742.JogNegative(strDeviceKey, addr, axis)
                                 isMoving[addr-1, axis-1] = True
                                 
                         else:
                             if isMoving[addr-1, axis-1]:
-                                cmd += f"{addr}>{axis}ST;"
+                                cmdLib8742.StopMotion(strDeviceKey, addr, axis)
                                 isMoving[addr-1, axis-1] = False
                                 
         
@@ -580,58 +590,64 @@ try:
                     print(t2-t1)
     
                     
-            # Mode pincettes
-            elif indexMode == 1:
-                cmd = ''
-                for axis in [1,2,3]:
-                    
-                    # Déplacement en bloc : joystick droit
-                    isTouchedRight = isTouched_list[0, axis-1] 
-                    if isTouchedRight:
-                        if not isMoving[0, axis-1]:
-                            if axis == 2:
-                                print('axis = 2')
-                                if direction[0,1] == '+':
-                                    print('+')
-                                    cmd += "1>2MV+;2>2MV-;"
-                                elif direction[0,1] == '-':
-                                    print('-')
-                                    cmd += "1>2MV-;2>2MV+;"
-                            else:
-                                cmd += f"1>{axis}MV{direction[0, axis-1]};2>{axis}MV{direction[0, axis-1]};"
-                            isMoving[0, axis-1] = True
-                    else:
-                        if isMoving[0, axis-1]:
-                            cmd += f"1>{axis}ST;2>{axis}ST;"
-                            isMoving[0, axis-1] = False
-                            
-                    # Déplacement opposé (pour pincer) : joystick gauche
-                    isTouchedLeft = isTouched_list[1, axis-1] 
-                    if isTouchedLeft and joystick.get_button(1)==1:
-                        # Commande Picomotor
-                        if not isMoving[1, axis-1]:
-                            if axis == 2:
-                                if direction[1, 1] == '+':
-                                    cmd += "1>2MV+;2>2MV+;"
-                                elif direction[1, 1] == '-':
-                                    cmd += "1>2MV-;2>2MV-;"
-                            else:                            
-                                if direction[1, axis-1] == '+':
-                                    cmd += f"1>{axis}MV+;2>{axis}MV-;"
-                                elif direction[1, axis-1] == '-':
-                                    cmd += f"1>{axis}MV-;2>{axis}MV+;"
-                            isMoving[1, axis-1] = True
-    
-                    else:
-                        if isMoving[1, axis-1]:
-                            cmd += f"1>{axis}ST;2>{axis}ST;"
-                            isMoving[1, axis-1] = False
-                            
-                if cmd != '':
-                    cmd = cmd[:-1]
-                    print(cmd)
-                    o.query(cmd)
-                    
+            # Mode pincettes (en bloc)
+            elif indexMode == 1 and joystick.get_button(1) == 0:
+                for addr in [1,2]:
+                    for axis in [1,2,3]:
+                        isTouched = isTouched_list[addr-1, axis-1]
+                        if isTouched:
+                            if not isMoving[addr-1, axis-1]: 
+                                if axis == 2:
+                                    if np.sign(buttons[addr-1, axis-1]) == 1:
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogNegative(strDeviceKey, addr%2 + 1, axis)
+                                    elif np.sign(buttons[addr-1, axis-1]) == -1:
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogPositive(strDeviceKey, addr%2 + 1, axis)
+                                else:
+                                    if np.sign(buttons[addr-1, axis-1]) == 1:
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogPositive(strDeviceKey, addr%2 + 1, axis)
+                                    elif np.sign(buttons[addr-1, axis-1]) == -1:
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogNegative(strDeviceKey, addr%2 + 1, axis)
+                                isMoving[addr-1, axis-1] = True
+                                    
+                        else:
+                            if isMoving[addr-1, axis-1]:
+                                cmdLib8742.StopMotion(strDeviceKey, addr, axis)
+                                cmdLib8742.StopMotion(strDeviceKey, addr%2 + 1, axis)
+                                isMoving[addr-1, axis-1] = False
+                                
+            # Mode pincettes (pour pincer)
+            elif indexMode == 1 and joystick.get_button(1) == 1:
+                for addr in [1,2]:
+                    for axis in [1,2,3]:
+                        isTouched = isTouched_list[addr-1, axis-1]
+                        if isTouched:
+                            if not isMoving[addr-1, axis-1]: 
+                                if axis == 2:
+                                    if np.sign(buttons[addr-1, axis-1]) == 1:
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogPositive(strDeviceKey, addr%2 + 1, axis)
+                                    elif np.sign(buttons[addr-1, axis-1]) == -1:
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogNegative(strDeviceKey, addr%2 + 1, axis)
+                                else:
+                                    if np.sign(buttons[addr-1, axis-1]) == 1:
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogNegative(strDeviceKey, addr%2 + 1, axis)
+                                    elif np.sign(buttons[addr-1, axis-1]) == -1:
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                        cmdLib8742.JogPositive(strDeviceKey, addr%2 + 1, axis)
+                                isMoving[addr-1, axis-1] = True
+                                    
+                        else:
+                            if isMoving[addr-1, axis-1]:
+                                cmdLib8742.StopMotion(strDeviceKey, addr, axis)
+                                cmdLib8742.StopMotion(strDeviceKey, addr%2 + 1, axis)
+                                isMoving[addr-1, axis-1] = False
+
         CalibrationDone = Calibration_Step1 and Calibration_Step2
                 
         
@@ -665,26 +681,14 @@ try:
             fibre1_pos.x, fibre1_pos.y = positionOnScreen(positions[0,:-1] - position_pointage[:-1] + corners[-1,:-1], pos_G)
             fibre2_pos.x, fibre2_pos.y = positionOnScreen(positions[1,:-1], pos_G)
             fibre1_pos.z, fibre2_pos.z = positions[:,2]
-            # fibre1_pos.y, fibre1_pos.x, fibre1_pos.z = positions[0]
-            # fibre2_pos.y, fibre2_pos.x, fibre2_pos.z = positions[1]
-            
-            # pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y/10 +center[1]), (-fibre1_pos.x/10 +center[0], fibre1_pos.y/10 +center[1]), width=1)
-            # pygame.draw.line(screen, "blue", (0, fibre2_pos.y/10 +center[1]), (fibre2_pos.x/10, fibre2_pos.y/10 +center[1]), width=1)
             
             pygame.draw.line(screen, "red", (screen.get_width(), fibre1_pos.y), (fibre1_pos.x, fibre1_pos.y), width=1)
             pygame.draw.line(screen, "blue", (0, fibre2_pos.y), (fibre2_pos.x, fibre2_pos.y), width=1)
             
-            print(fibre2_pos.x, fibre2_pos.y)
-            print(fibre1_pos.x, fibre1_pos.y)
-                    
             text_print.tprint(screen, '')
-            # text_print.tprint(screen, f"Motor 1 : x (axis 2) = {fibre1_pos.x:.0f}, y (axis 1) = {fibre1_pos.y:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
-            # text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {fibre2_pos.x:.0f}, y (axis 1) = {fibre2_pos.y:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
-            
             text_print.tprint(screen, f"Motor 1 : x (axis 2) = {positions[0,1]:.0f}, y (axis 1) = {positions[0,0]:.0f}, z (axis 3) = {fibre1_pos.z:.0f}")
             text_print.tprint(screen, f"Fiber 2 : x (axis 2) = {positions[1,1]:.0f}, y (axis 1) = {positions[1,0]:.0f}, z (axis 3) = {fibre2_pos.z:.0f}")
         
-        #print(CalibrationDone)
         pygame.display.flip()
         
         dt = clock.tick(60) / 1000
