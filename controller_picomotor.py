@@ -284,20 +284,30 @@ o.query('2>3DH?')
 o.go_home()
 
 #o.shutdown()
-t1 = time.time()
-cmdLib8742.JogPositive(strDeviceKey, 1, 1)
-t2 = time.time()
-cmdLib8742.StopMotion(strDeviceKey, 1, 1)
-t3 = time.time()
-print(t3-t1)
-print(t3-t2)
-print(t2-t1)
+
 
 strDeviceKey = o.DeviceKeys[0]
 cmdLib8742.AbortMotion(strDeviceKey, 1)
 cmdLib8742.AbortMotion(strDeviceKey, 2)
 
-#%%
+t1 = time.time()
+cmdLib8742.JogPositive(strDeviceKey, 1, 1)
+t2 = time.time()
+cmdLib8742.JogPositive(strDeviceKey, 2, 1)
+t3 = time.time()
+time.sleep(0.5)
+t4 = time.time()
+cmdLib8742.StopMotion(strDeviceKey, 1, 1)
+t5 = time.time()
+cmdLib8742.StopMotion(strDeviceKey, 2, 1)
+t6 = time.time()
+print(t2-t1)
+print(t3-t2)
+print(t4-t3)
+print(t5-t4)
+print(t6-t5)
+
+#%% Controle Manette
 
 strDeviceKey = o.DeviceKeys[0]
 
@@ -701,3 +711,107 @@ except KeyboardInterrupt:
 finally:
     pygame.quit()
     
+    
+#%%
+
+# 1>1MV+;2>1MV+
+pos_ini_1 = np.array([252, 774]) # droite
+pos_ini_2 = np.array([459, -182]) # gauche
+
+pos_fin_1 = np.array([2725, 774])
+pos_fin_2 = np.array([2932, -182])
+
+print(pos_fin_1 - pos_ini_1)
+print(pos_fin_2 - pos_ini_2)
+
+
+# 1>1MV-;2>1MV-
+pos_ini_3 = np.array([2746, 774]) # droite
+pos_ini_4 = np.array([2932, -182]) # gauche
+
+pos_fin_3 = np.array([348, 774])
+pos_fin_4 = np.array([534, -182])
+
+print(pos_fin_3 - pos_ini_3)
+print(pos_fin_4 - pos_ini_4)
+
+# Donc même nombre de pas effectués peu importe la direction du mouvement, mais l'arrivée est décalée seulement quand on se déplace vers les y negatifs (vers le haut)
+
+
+# 1>1MV+;2>1MV+
+# 1>1MV-;2>1MV-
+# 2>1MV-;1>1MV-
+# 1>1ST;2>1ST
+
+
+#%%
+import matplotlib.pyplot as plt
+
+strDeviceKey = o.DeviceKeys[0]
+
+nPosition = 0
+
+t = []
+
+pos_1 = []
+vit_1 = []
+acc_1 = []
+
+pos_2 = []
+vit_2 = []
+acc_2 = []
+
+t0 = time.time()
+cmdLib8742.JogNegative(strDeviceKey, 1, 1)
+cmdLib8742.JogNegative(strDeviceKey, 2, 1)
+
+while time.time() - t0 < 20:
+    t.append(time.time())
+    pos_1.append(cmdLib8742.GetPosition(strDeviceKey, 1, 1, nPosition)[1])
+    pos_2.append(cmdLib8742.GetPosition(strDeviceKey, 2, 1, nPosition)[1])
+    vit_1.append(cmdLib8742.GetVelocity(strDeviceKey, 1, 1, nPosition)[1])
+    vit_2.append(cmdLib8742.GetVelocity(strDeviceKey, 2, 1, nPosition)[1])
+    acc_1.append(cmdLib8742.GetAcceleration(strDeviceKey, 1, 1, nPosition)[1])
+    acc_2.append(cmdLib8742.GetAcceleration(strDeviceKey, 2, 1, nPosition)[1])
+    
+cmdLib8742.StopMotion(strDeviceKey, 1, 1)
+cmdLib8742.StopMotion(strDeviceKey, 2, 1)
+
+# print(pos_1)
+# print(pos_2)
+# print(vit_1)
+# print(vit_2)
+# print(acc_1)
+# print(acc_2)
+
+pos_1 = np.array(pos_1)
+pos_2 = np.array(pos_2)
+vit_1 = np.array(vit_1)
+vit_2 = np.array(vit_2)
+acc_1 = np.array(acc_1)
+acc_2 = np.array(acc_2)
+
+t = np.array(t) - t0
+
+plt.figure()
+plt.plot(t, pos_1 - pos_1[0])
+plt.plot(t, pos_2 - pos_2[0])
+plt.show()
+
+plt.figure()
+plt.plot(t, vit_1)
+plt.plot(t, vit_2)
+plt.show()
+
+plt.figure()
+plt.plot(t, acc_1)
+plt.plot(t, acc_2)
+plt.show()
+
+plt.figure()
+plt.plot(t, pos_1 - pos_1[0] - (pos_2 - pos_2[0]))
+plt.show()
+
+
+
+
