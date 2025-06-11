@@ -104,3 +104,4 @@ print(trueVelocity_neg)
         # Pour l'axe x, rien besoin de changer, il y a une partie immobile donc qui n'apparait pas à la caméra
     # Reconfectionner le mode "configuration" afin qu'il n'interfere pas avec le texte
     # Redimmensionner l'écran et voir si il y a un moyen de l'afficher à un endroit précis de l'écran
+    # Retirer les histoires de 'home positions' je pense qu'on s'en fout
