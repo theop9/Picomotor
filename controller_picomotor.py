@@ -242,48 +242,19 @@ class picomotor:
             for axis in [1,2,3]:
                 nReturn = cmdLib8742.SetVelocity(strDeviceKey, addr, axis, stepsPerSec)
                 
-    def go_home(self):
-        strDeviceKey = self.DeviceKeys[0]
-        for addr in [1,2]:
-            for axis in [1,2,3]:
-                nReturn = cmdLib8742.MoveToHome(strDeviceKey, addr, axis)
-                
     def AB(self):
         strDeviceKey = self.DeviceKeys[0]
         cmdLib8742.AbortMotion(strDeviceKey, 1)
         cmdLib8742.AbortMotion(strDeviceKey, 2)
-    
-    
-    # def query(self, key, cmd):
-    # sb = StringBuilder(64)
-    # ret = self.deviceIO.Query(key, cmd, sb)
-    # result = sb.ToString().strip() if ret else None
-    # return result
+
 
 #%%
 
 o = picomotor()
 o.system_info()
 
-
-o.query('1>3MV+')
-o.query('1>3ST')
-
-o.get_position2(1,3)
-o.get_all_positions()
-
-o.set_all_velocity(1001)
-
-o.query('1>1DH?')
-o.query('1>2DH?')
-o.query('1>3DH?')
-o.query('2>1DH?')
-o.query('2>2DH?')
-o.query('2>3DH?')
-
-o.go_home()
-
-#o.shutdown()
+# o.AB()
+# o.shutdown()
 
 
 strDeviceKey = o.DeviceKeys[0]
@@ -293,7 +264,7 @@ cmdLib8742.AbortMotion(strDeviceKey, 2)
 t1 = time.time()
 cmdLib8742.JogPositive(strDeviceKey, 1, 1)
 t2 = time.time()
-cmdLib8742.JogPositive(strDeviceKey, 2, 1)
+cmdLib8742.JogPositive(strDeviceKey, 1, 1)
 t3 = time.time()
 time.sleep(0.5)
 t4 = time.time()
@@ -311,9 +282,11 @@ print(t6-t5)
 
 strDeviceKey = o.DeviceKeys[0]
 
+os.environ['SDL_VIDEO_WINDOW_POS'] = '0,30'
+
 pygame.init()
 pygame.joystick.init()
-screen = pygame.display.set_mode((600, 600))
+screen = pygame.display.set_mode((400, 600))
 center = (screen.get_width()/2, screen.get_height()/2)
 pygame.display.set_caption("Contrôle clavier")
 clock = pygame.time.Clock()
@@ -324,7 +297,8 @@ dt = 0
 class TextPrint:
     def __init__(self):
         self.reset()
-        self.font = pygame.font.Font(None, 25)
+        self.font = pygame.font.SysFont("Segoe UI Symbol", 15)
+        
 
     def tprint(self, screen, text):
         text_bitmap = self.font.render(text, True, (0, 0, 0))
@@ -364,6 +338,26 @@ def coord_to_screen(pos):
 def positionOnScreen(pos, pos_G):
     return(screen.get_width()/2 + alpha*(pos[1] - pos_G[1]), screen.get_height()/2 + alpha*(pos[0] - pos_G[0]))
 
+def chgt_ordre_vitesse(vitesse):
+    """
+    Nouveau tableau pour faciliter la vérification de vitesse avec les index 
+    --> les coordonnées du nouveau tableau correspondent à celles du moteur : axe x/y inversés
+    """
+    vx1pos, vy1pos, vz1pos = vitesse[0]
+    vx1neg, vy1neg, vz1neg = vitesse[1]
+    vx2pos, vy2pos, vz2pos = vitesse[2]
+    vx2neg, vy2neg, vz2neg = vitesse[3]
+
+
+    actualVitesse = np.array([[[vy1pos, vy1neg], #nouveau tableau pour faciliter la vérification de vitesse avec les index
+                               [vx1pos, vx1neg], 
+                               [vz1pos, vz1neg]],
+                             
+                              [[vy2pos, vy2neg], 
+                               [vx2pos, vx2neg], 
+                               [vz2pos, vz2neg]]])
+    return actualVitesse
+
 # Détection de la manette
 if pygame.joystick.get_count() == 0:
     print("Aucune manette détectée")
@@ -372,15 +366,6 @@ if pygame.joystick.get_count() == 0:
 joystick = pygame.joystick.Joystick(0)
 joystick.init()
 print(f"Manette détectée : {joystick.get_name()} \n")
-
-# Définition des home positions (récupérer directement avec a query DH? ou avec une fonction de la DLL)
-home_1_x = 200
-home_1_y = 200
-home_1_z = 0
-home_2_x = 400
-home_2_y = 200
-home_2_z = 0
-
 
 # Initialisation du mode de déplacement
 indexMode = 0
@@ -393,8 +378,10 @@ print(f"Mode choisi par défault : {actualMode}")
 slow_velocity = 100 #steps/s
 medium_velocity = 500 #steps/s
 fast_velocity = 1000 #steps/s
-velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
-ModeVitesse = np.array(['slow', 'medium', 'fast'])
+# velocity = np.array([slow_velocity, medium_velocity, fast_velocity])
+# ModeVitesse = np.array(['slow', 'medium', 'fast'])
+velocity = np.arange(100, 1600, 100)
+ModeVitesse = velocity
 
 indexModeVitesse = 0
 o.set_all_velocity(int(velocity[indexModeVitesse]))
@@ -419,6 +406,42 @@ isCorner = [ 'No', 'No', 'No', 'No']
 fibre1_pos = pygame.Vector3(0, 0, 0)
 fibre2_pos = pygame.Vector3(0, 0, 0)
 
+# Changement Vitesse
+choixVitesse = np.array([[False, False, False],  # droite : xpos ypos zpos
+                         [False, False, False],  #          xneg yneg zneg
+                         [False, False, False],  # gauche : xpos ypos zpos
+                         [False, False, False]]) #          xneg yneg zneg
+
+
+isChoixVitesseChangedLastFrame = False
+toggleChangingVitesse = False
+isChangingVitesseLastFrame = False
+indexVitesse = [0, 0]
+refStepsPerSec = 0
+
+# Initialisation des vitesses
+vx1pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 2, refStepsPerSec)[1]
+vy1pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 1, refStepsPerSec)[1]
+vz1pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 3, refStepsPerSec)[1]
+vx1neg = vx1pos
+vy1neg = vy1pos
+vz1neg = vz1pos
+vx2pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 2, refStepsPerSec)[1]
+vy2pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 2, refStepsPerSec)[1]
+vz2pos = cmdLib8742.GetVelocity(strDeviceKey, 1, 2, refStepsPerSec)[1]
+vx2neg = vx2pos
+vy2neg = vy2pos
+vz2neg = vz2pos
+
+vitesse = np.array([[vx1pos, vy1pos, vz1pos], 
+                    [vx1neg, vy1neg, vz1neg], 
+                    [vx2pos, vy2pos, vz2pos], 
+                    [vx2neg, vy2neg, vz2neg]])
+
+actualVitesse = chgt_ordre_vitesse(vitesse)
+
+isVitesseChanged = True
+
 
 
 # Main code
@@ -436,16 +459,19 @@ try:
         text_print.unindent()
         text_print.tprint(screen, f"STEP 2 : {Calibration_Step2}")
         text_print.unindent()
-        text_print.tprint(screen, ' ')
+        text_print.tprint(screen, '')
         text_print.tprint(screen, f"Mode : {actualMode}")
         text_print.tprint(screen, f"Velocity : {actualModeVitesse} ({velocity[indexModeVitesse]} steps/sec)")
-        
-        # Affichage des home positions
-        # pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y - 2), ((home_1_x + 2, home_1_y + 2)), width=1)
-        # pygame.draw.line(screen, "red", (home_1_x - 2, home_1_y + 2), ((home_1_x + 2, home_1_y - 2)), width=1)
-        # pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y - 2), ((home_2_x + 2, home_2_y + 2)), width=1)
-        # pygame.draw.line(screen, "blue", (home_2_x - 2, home_2_y + 2), ((home_2_x + 2, home_2_y - 2)), width=1)
-        
+        text_print.tprint(screen, '')
+        text_print.tprint(screen, '')
+        text_print.tprint(screen, f"{'Changing' if toggleChangingVitesse else 'OK'}")
+        text_print.tprint(screen, f"Fibre 1 : {'x' if indexVitesse != [0,0] else 'X'} ← : {vitesse[0,0]},    {'y' if indexVitesse != [0,1] else 'Y'} ↑ : {vitesse[0,1]},    {'z' if indexVitesse != [0,2] else 'Z'} ^ : {vitesse[0,2]} ")
+        text_print.tprint(screen, f"            : {'x' if indexVitesse != [1,0] else 'X'} → : {vitesse[1,0]},    {'y' if indexVitesse != [1,1] else 'Y'} ↓ : {vitesse[1,1]},    {'z' if indexVitesse != [1,2] else 'Z'} v : {vitesse[1,2]} ")
+        text_print.tprint(screen, '')
+        text_print.tprint(screen, f"Fibre 2 : {'x' if indexVitesse != [2,0] else 'X'} → : {vitesse[2,0]},    {'y' if indexVitesse != [2,1] else 'Y'} ↑ : {vitesse[2,1]},    {'z' if indexVitesse != [2,2] else 'Z'} ^ : {vitesse[2,2]} ")
+        text_print.tprint(screen, f"            : {'x' if indexVitesse != [3,0] else 'X'} ← : {vitesse[3,0]},    {'y' if indexVitesse != [3,1] else 'Y'} ↓ : {vitesse[3,1]},    {'z' if indexVitesse != [3,2] else 'Z'} v : {vitesse[3,2]} ")
+
+
         # Manières d'arreter le "jeu" : fermer la fenêtre, appuyer sur espace, interrompre le noyau
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -472,9 +498,58 @@ try:
             indexModeVitesse = indexModeVitesse%len(ModeVitesse)
             actualModeVitesse = ModeVitesse[indexModeVitesse]
             o.set_all_velocity(int(velocity[indexModeVitesse]))
+            for i in range(len(vitesse)):
+                for j in range(len(vitesse[0])):
+                    vitesse[i,j] = int(velocity[indexModeVitesse])
             print(f"Vitesse : {actualModeVitesse}")
+            actualVitesse = chgt_ordre_vitesse(vitesse)
             # print(cmdModeVitesse[indexModeVitesse])
         isModeVitesseChangedLastFrame = btnModeVitesse
+
+        
+        # Changement du réglage des vitesses        
+        btnChoixVitesse = joystick.get_hat(0) 
+        if not isChoixVitesseChangedLastFrame and not toggleChangingVitesse:
+            if btnChoixVitesse[1] == 1:
+                indexVitesse[0] -= 1
+                indexVitesse[0] = indexVitesse[0]%4
+                isChoixVitesseChangedLastFrame = True
+            elif btnChoixVitesse[1] == -1:
+                indexVitesse[0] += 1
+                indexVitesse[0] = indexVitesse[0]%4
+                isChoixVitesseChangedLastFrame = True
+                
+            if btnChoixVitesse[0] == 1:
+                indexVitesse[1] += 1
+                indexVitesse[1] = indexVitesse[1]%3
+                isChoixVitesseChangedLastFrame = True
+            elif btnChoixVitesse[0] == -1:
+                indexVitesse[1] -= 1
+                indexVitesse[1] = indexVitesse[1]%3
+                isChoixVitesseChangedLastFrame = True
+        else:
+            if btnChoixVitesse == (0, 0):
+                isChoixVitesseChangedLastFrame = False
+        
+        btnConfirm = joystick.get_button(1)
+        if btnConfirm and not isChangingVitesseLastFrame:
+            toggleChangingVitesse = not toggleChangingVitesse
+        isChangingVitesseLastFrame = btnConfirm
+        
+        if toggleChangingVitesse:
+            isVitesseChanged = False
+            if btnChoixVitesse[1] == 1:
+                vitesse[tuple(indexVitesse)] += 1
+            elif btnChoixVitesse[1] == -1:
+                if vitesse[tuple(indexVitesse)] <= 1:
+                    joystick.rumble(0.7, 0.7, 400)
+                else:
+                    vitesse[tuple(indexVitesse)] -= 1
+        else:
+            if not isVitesseChanged:
+                print(f"set vitesse motor {indexVitesse[0]//2 + 1} axe {indexVitesse[1] + 1} dans le sens {indexVitesse[0]%2} (0 = positif, 1 = negatif)")
+                actualVitesse = chgt_ordre_vitesse(vitesse)
+                isVitesseChanged = True
                  
         
         # Déplacement des fibres
@@ -512,7 +587,6 @@ try:
         if toggleCalibration:
             # Step 1 : pointage des coins de l'échantillon avec la fibre de gauche
             if not Calibration_Step1:
-                cmd = ''
                 for axis in [1,2,3]:
                     isTouched = isTouched_list[1, axis-1]
                     if isTouched:
@@ -528,11 +602,6 @@ try:
                             cmdLib8742.StopMotion(strDeviceKey, 2, axis)
                             isMoving[1, axis-1] = False
                                 
-        
-                if cmd !='':
-                    cmd = cmd[:-1]
-                    print(cmd)
-                    o.query(cmd)
                 btnConfirm = joystick.get_button(1)
                 position_corner = o.get_all_positions()[1] # on pointe avec la fibre de gauche
                 
@@ -543,7 +612,6 @@ try:
                     
             # Step 2 : Coordination avec la fibre gauche
             elif Calibration_Step1 and not Calibration_Step2:
-                cmd = ''
                 for axis in [1,2,3]:
                     isTouched = isTouched_list[0, axis-1]
                     if isTouched:
@@ -557,11 +625,6 @@ try:
                         if isMoving[0, axis-1]:
                             cmdLib8742.StopMotion(strDeviceKey, 1, axis)
                             isMoving[0, axis-1] = False
-                            
-                if cmd !='':
-                    cmd = cmd[:-1]
-                    print(cmd)
-                    o.query(cmd)
 
                 btnConfirm = joystick.get_button(1)
 
@@ -572,17 +635,36 @@ try:
                 
         else:
             # Mode indépendant 
-            if indexMode == 0:              
-                cmd = ''
+            if indexMode == 0:
                 for addr in [1,2]:
                     for axis in [1,2,3]:
                         isTouched = isTouched_list[addr-1, axis-1]
                         if isTouched:
                             if not isMoving[addr-1, axis-1]:
                                 if np.sign(buttons[addr-1, axis-1]) == 1:
-                                    cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                    if cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec)[1] == actualVitesse[addr-1, axis-1, 0]:
+                                        # print('oui')
+                                        # print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                    else:
+                                        # print('non')
+                                        # print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                        cmdLib8742.SetVelocity(strDeviceKey, addr, axis, int(actualVitesse[addr-1, axis-1, 0]))
+                                        cmdLib8742.JogPositive(strDeviceKey, addr, axis)
+                                        print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                        
                                 elif np.sign(buttons[addr-1, axis-1]) == -1:
-                                    cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                    if cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec)[1] == actualVitesse[addr-1, axis-1, 1]:
+                                        # print('oui')
+                                        # print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                    else:
+                                        # print('non')
+                                        # print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                        cmdLib8742.SetVelocity(strDeviceKey, addr, axis, int(actualVitesse[addr-1, axis-1, 1]))
+                                        cmdLib8742.JogNegative(strDeviceKey, addr, axis)
+                                        # print(cmdLib8742.GetVelocity(strDeviceKey, addr, axis, refStepsPerSec))
+                                    
                                 isMoving[addr-1, axis-1] = True
                                 
                         else:
@@ -590,14 +672,7 @@ try:
                                 cmdLib8742.StopMotion(strDeviceKey, addr, axis)
                                 isMoving[addr-1, axis-1] = False
                                 
-        
-                if cmd !='':
-                    cmd = cmd[:-1]
-                    print(cmd)
-                    t1 = time.time()
-                    o.query(cmd)
-                    t2 = time.time()
-                    print(t2-t1)
+            
     
                     
             # Mode pincettes (en bloc)
@@ -658,6 +733,7 @@ try:
                                 cmdLib8742.StopMotion(strDeviceKey, addr%2 + 1, axis)
                                 isMoving[addr-1, axis-1] = False
 
+
         CalibrationDone = Calibration_Step1 and Calibration_Step2
                 
         
@@ -711,107 +787,3 @@ except KeyboardInterrupt:
 finally:
     pygame.quit()
     
-    
-#%%
-
-# 1>1MV+;2>1MV+
-pos_ini_1 = np.array([252, 774]) # droite
-pos_ini_2 = np.array([459, -182]) # gauche
-
-pos_fin_1 = np.array([2725, 774])
-pos_fin_2 = np.array([2932, -182])
-
-print(pos_fin_1 - pos_ini_1)
-print(pos_fin_2 - pos_ini_2)
-
-
-# 1>1MV-;2>1MV-
-pos_ini_3 = np.array([2746, 774]) # droite
-pos_ini_4 = np.array([2932, -182]) # gauche
-
-pos_fin_3 = np.array([348, 774])
-pos_fin_4 = np.array([534, -182])
-
-print(pos_fin_3 - pos_ini_3)
-print(pos_fin_4 - pos_ini_4)
-
-# Donc même nombre de pas effectués peu importe la direction du mouvement, mais l'arrivée est décalée seulement quand on se déplace vers les y negatifs (vers le haut)
-
-
-# 1>1MV+;2>1MV+
-# 1>1MV-;2>1MV-
-# 2>1MV-;1>1MV-
-# 1>1ST;2>1ST
-
-
-#%%
-import matplotlib.pyplot as plt
-
-strDeviceKey = o.DeviceKeys[0]
-
-nPosition = 0
-
-t = []
-
-pos_1 = []
-vit_1 = []
-acc_1 = []
-
-pos_2 = []
-vit_2 = []
-acc_2 = []
-
-t0 = time.time()
-cmdLib8742.JogNegative(strDeviceKey, 1, 1)
-cmdLib8742.JogNegative(strDeviceKey, 2, 1)
-
-while time.time() - t0 < 20:
-    t.append(time.time())
-    pos_1.append(cmdLib8742.GetPosition(strDeviceKey, 1, 1, nPosition)[1])
-    pos_2.append(cmdLib8742.GetPosition(strDeviceKey, 2, 1, nPosition)[1])
-    vit_1.append(cmdLib8742.GetVelocity(strDeviceKey, 1, 1, nPosition)[1])
-    vit_2.append(cmdLib8742.GetVelocity(strDeviceKey, 2, 1, nPosition)[1])
-    acc_1.append(cmdLib8742.GetAcceleration(strDeviceKey, 1, 1, nPosition)[1])
-    acc_2.append(cmdLib8742.GetAcceleration(strDeviceKey, 2, 1, nPosition)[1])
-    
-cmdLib8742.StopMotion(strDeviceKey, 1, 1)
-cmdLib8742.StopMotion(strDeviceKey, 2, 1)
-
-# print(pos_1)
-# print(pos_2)
-# print(vit_1)
-# print(vit_2)
-# print(acc_1)
-# print(acc_2)
-
-pos_1 = np.array(pos_1)
-pos_2 = np.array(pos_2)
-vit_1 = np.array(vit_1)
-vit_2 = np.array(vit_2)
-acc_1 = np.array(acc_1)
-acc_2 = np.array(acc_2)
-
-t = np.array(t) - t0
-
-plt.figure()
-plt.plot(t, pos_1 - pos_1[0])
-plt.plot(t, pos_2 - pos_2[0])
-plt.show()
-
-plt.figure()
-plt.plot(t, vit_1)
-plt.plot(t, vit_2)
-plt.show()
-
-plt.figure()
-plt.plot(t, acc_1)
-plt.plot(t, acc_2)
-plt.show()
-
-plt.figure()
-plt.plot(t, pos_1 - pos_1[0] - (pos_2 - pos_2[0]))
-plt.show()
-
-
-
-
