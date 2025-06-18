@@ -1,0 +1,130 @@
+from instruments.PIDTemperature import PIDController
+from instruments.PowerSupply import AlimController  # Import PowerSupply (formerly AlimController)
+import matplotlib.pyplot as plt
+import time
+import numpy as np
+import pandas as pd
+import csv
+
+# Parameters
+
+dt = 0.09           # Time step in seconds
+t0 = 100             # Step input time in seconds
+t1 = 200            # Time of stopping
+tf = 2*3600          # Final time in seconds
+step_voltage = 14   # Voltage after step
+sf = 2018           # Scale factor between resistance and readed voltage
+
+# Initialize PID controller
+p = PIDController(save_data=False, csv_filename="PID_data.csv")
+p.read_voltage()
+p.write_control_voltage(0)  # Make sure the applied voltage is zero at the beginning
+
+alim = AlimController()
+
+# Data storage
+data = []                   
+start_time = time.time()    # Start time
+voltage_applied = False     # Flag to track if step voltage has been applied
+
+# Set up the figure with gridspec layout
+fig = plt.figure(figsize=(6.5, 6))
+gs = fig.add_gridspec(2, 1, left=0.13, right=0.87, bottom=0.13, top=0.87, wspace=0.43, hspace=0.5)
+ax1 = fig.add_subplot(gs[0, 0])
+ax2 = fig.add_subplot(gs[1, 0])
+
+# Plot style parameters (unchanged from your original code)
+marker_size = 8
+capsize = 1
+line_width = 1.1
+font_size = 10.5
+legend_fontsize = 10
+label_size = 10
+axis_linewidth = 0.5
+tick_length = 2.5
+
+# Plot setup (unchanged)
+ax1.set_xlabel(r'Time (min)', fontsize=font_size)
+ax1.set_ylabel(r'Applied voltage (V)', fontsize=font_size)
+ax2.set_xlabel(r'Time (s)', fontsize=font_size)
+ax2.set_ylabel(r'Measured resistance ($\Omega$)', fontsize=font_size)
+ax1.tick_params(axis='both', labelsize=label_size)
+ax2.tick_params(axis='both', labelsize=label_size)
+
+# Real-time plotting loop
+while True:
+    current_time = time.time() - start_time
+
+    # Apply the step voltage only once when t0 is reached
+    if not voltage_applied and current_time >= t0 and current_time <= t1:
+        p.write_control_voltage(step_voltage)
+        voltage_applied = True
+
+    elif voltage_applied and current_time > t1:
+        alim.disable_output(1)
+        alim.disable_output(2)
+        voltage_applied = False
+
+    # Determine the currently applied voltage for logging
+    applied_voltage = step_voltage if voltage_applied else 0
+
+    # Read sensor voltage
+    measured_voltage = p.read_voltage()
+
+    # Store the data: Time, Measured Voltage, Applied Voltage
+    data.append([round(current_time, 3), measured_voltage * sf, applied_voltage])
+
+    # Update the data on the plot (without clearing the axes)
+    df = pd.DataFrame(data, columns=["Time (s)", "Resistance (ohm)", "Applied Voltage (V)"])
+
+    # Clear the lines on the axes before plotting new data
+    ax1.cla()
+    ax2.cla()
+
+    # Reapply the plot styles (this is important to preserve the previous style)
+    ax1.set_xlabel(r'Time (min)', fontsize=font_size)
+    ax1.set_ylabel(r'Applied voltage (V)', fontsize=font_size)
+    ax2.set_xlabel(r'Time (min)', fontsize=font_size)
+    ax2.set_ylabel(r'Measured resistance ($\Omega$)', fontsize=font_size)
+
+    ax1.tick_params(axis='both', labelsize=label_size)
+    ax2.tick_params(axis='both', labelsize=label_size)
+
+    ax1.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+    ax2.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+
+    for axis in ['top', 'bottom', 'left', 'right']:
+        ax1.spines[axis].set_linewidth(axis_linewidth)
+        ax2.spines[axis].set_linewidth(axis_linewidth)
+
+    ax1.tick_params(width=axis_linewidth, length=tick_length)
+    ax2.tick_params(width=axis_linewidth, length=tick_length)
+
+    # Plot the updated data (without clearing the entire axes)
+    ax1.plot(df["Time (s)"]/60, df["Applied Voltage (V)"], color='C0', linewidth=line_width)
+    ax2.plot(df["Time (s)"]/60, df["Resistance (ohm)"], color='C1', linewidth=line_width)
+
+    # Save data periodically to CSV (every 10 seconds)
+    if current_time % 0.5 < dt:
+        with open('output_data/PID_step_response_data.csv', mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Time (s)", "Resistance (ohm)", "Applied Voltage (V)"])
+            writer.writerows(data)
+
+    # Pause to allow for plot updates
+    plt.pause(dt)
+
+    # Stop after tf
+    #if current_time >= tf:
+    #    p.write_control_voltage(0)
+    #    break  # End the loop
+
+# Final save after loop
+with open('output_data/PID_step_response_data.csv', mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Time (s)", "Resistance (ohm)", "Applied Voltage (V)"])
+    writer.writerows(data)
+
+print(f'Data saved to: output_data > PID_data')
+fig.savefig('output_data/PID_step_response_plot.pdf', format='pdf', dpi=450, bbox_inches='tight')
+plt.show()
