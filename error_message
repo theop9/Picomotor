@@ -1,0 +1,16 @@
+Beeper disabled.
+Output enabled on channel 1.
+Output enabled on channel 2.
+C:\Users\Alok\Documents\Hilario_Local\.venv\Lib\site-packages\numpy\_core\fromnumeric.py:3860: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Alok\Documents\Hilario_Local\.venv\Lib\site-packages\numpy\_core\_methods.py:145: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+Beeper disabled.
+Output disabled on channel 1.
+Output disabled on channel 2.
+Error reading voltage from Red Pitaya: could not convert string to float: '4.0356454.030762'
+Traceback (most recent call last):
+  File "m:\LIME\Hilario\Instrumentation\Python\PIDTuning_Step_Input.py", line 74, in <module>
+    data.append([round(current_time, 3), measured_voltage * sf, applied_voltage])
+                                         ~~~~~~~~~~~~~~~~~^~~~
+TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'
